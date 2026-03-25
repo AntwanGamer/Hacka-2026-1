@@ -1,0 +1,393 @@
+import 'package:flutter/material.dart';
+
+class ManifiestosView extends StatelessWidget {
+  const ManifiestosView({super.key});
+
+  // ---------------------------
+  // ESTRUCTURA DEL MANIFIESTO (SIMULACIÓN DE PAPEL)
+  // ---------------------------
+  Widget _manifiestoPaper({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(30),
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 10,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  // ---------------------------
+  // WIDGET PARA CAMPOS SIMPLES
+  // ---------------------------
+  Widget _manifestField({
+    required BuildContext
+    context, // Se requiere BuildContext para el DatePicker (o Select)
+    required String label,
+    String initialValue = '',
+    bool isLargeText = false,
+    bool isDate = false,
+    Function(String)? onChanged,
+  }) {
+    // Función de ejemplo para seleccionar fecha
+    Future<void> selectDate() async {
+      // Nota: Esto generará un error si no se envuelve en un widget stateful
+      // y si no se maneja la lógica de showDatePicker
+      // Aquí solo se muestra el esqueleto de cómo se llamaría:
+      if (isDate) {
+        // final DateTime? picked = await showDatePicker(...)
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: Colors.black54,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          TextFormField(
+            initialValue: initialValue,
+            onChanged: onChanged,
+            readOnly: isDate,
+            onTap: isDate ? selectDate : null,
+            decoration: InputDecoration(
+              suffixIcon: isDate
+                  ? const Icon(
+                      Icons.calendar_today,
+                      color: Colors.black54,
+                      size: 18,
+                    )
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              isDense: true,
+              border: const UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.black87, width: 1.5),
+              ),
+              enabledBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.black87, width: 1.5),
+              ),
+              focusedBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.blue, width: 2),
+              ),
+            ),
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: isLargeText ? 18 : 16,
+              fontWeight: isLargeText ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------
+  // WIDGET PARA LAS TABLAS DE ARTÍCULOS (Filas de Input)
+  // ---------------------------
+  Widget _manifestInputRow({
+    required String label,
+    required String unit,
+    String initialValue = '',
+    Function(String)? onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: TextFormField(
+              initialValue: initialValue,
+              onChanged: onChanged,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              decoration: InputDecoration(
+                hintText: "0",
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 8,
+                  horizontal: 10,
+                ),
+                isDense: true,
+                border: const OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black26),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey.shade400),
+                ),
+                focusedBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.blue, width: 2),
+                ),
+              ),
+              style: const TextStyle(color: Colors.black, fontSize: 16),
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Text(
+                unit,
+                style: const TextStyle(color: Colors.black54, fontSize: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------
+  // ÁREA DE CARGA DE ARCHIVOS EXCEL
+  // ---------------------------
+  Widget _uploadExcelArea(BuildContext context) {
+    final theme = Theme.of(context);
+    // Definimos el color primario de DCK
+    const Color dckPrimaryColor = Color(0xFF3F51B5);
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withOpacity(0.3),
+          style: BorderStyle.solid,
+          width: 2,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.cloud_upload_outlined,
+            color: dckPrimaryColor,
+            size: 60,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "Arrastra y suelta aquí tu archivo Excel",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: theme.colorScheme.onSurface,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Solo archivos .xlsx con datos de manifiestos",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: theme.colorScheme.onSurface.withOpacity(0.7),
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {
+              // Lógica para abrir el selector de archivos
+            },
+            icon: const Icon(Icons.folder_open),
+            label: const Text("SELECCIONAR ARCHIVO"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: dckPrimaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      // Contenedor principal que divide la vista
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Lado Izquierdo: Formulario de Manifiesto
+        Expanded(
+          flex: 3,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: _manifiestoPaper(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ENCABEZADO
+                    const Center(
+                      child: Text(
+                        'Coordinación General de Puertos y Marina Mercante',
+                        style: TextStyle(color: Colors.black, fontSize: 16),
+                      ),
+                    ),
+                    const Center(
+                      child: Text(
+                        'Dirección General de Marina Mercante',
+                        style: TextStyle(color: Colors.black54, fontSize: 14),
+                      ),
+                    ),
+                    const Divider(color: Colors.black26, height: 30),
+
+                    // NOMBRE DEL BARCO Y FECHA
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _manifestField(
+                            context: context,
+                            label: "Nombre de Barco",
+                            initialValue: "B/M [Seleccionar barco]",
+                            isLargeText: true,
+                          ),
+                        ),
+                        const SizedBox(width: 30),
+                        Expanded(
+                          child: _manifestField(
+                            context: context,
+                            label: "Fecha",
+                            initialValue: "21/09/2015",
+                            isDate: true,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    // ENTREGA DE RESIDUOS
+                    const Text(
+                      "ENTREGA DE RESIDUOS",
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Divider(color: Colors.black26),
+                    _manifestInputRow(label: "Aceite Usado", unit: "Litros"),
+                    _manifestInputRow(label: "Basura", unit: "Kg"),
+                    _manifestInputRow(
+                      label: "Filtros de Aceite",
+                      unit: "Unidades",
+                    ),
+                    _manifestInputRow(
+                      label: "Filtros de Diésel",
+                      unit: "Unidades",
+                    ),
+                    _manifestInputRow(
+                      label: "Filtros de Aire",
+                      unit: "Unidades",
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    // RESPONSABLES
+                    const Text(
+                      'RESPONSABLE DE ENTREGA DE LÍQUIDOS (ACEITE USADO)',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Divider(color: Colors.black26),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _manifestField(
+                            context: context,
+                            label: "Motorista",
+                            initialValue: 'Victor Reyes C.',
+                          ),
+                        ),
+                        const SizedBox(width: 30),
+                        Expanded(
+                          child: _manifestField(
+                            context: context,
+                            label: "Cocinero",
+                            initialValue: 'Sergio Félix D.',
+                          ),
+                        ),
+                      ],
+                    ),
+                    _manifestField(
+                      context: context,
+                      label: "Recibe: 1er. Oficial de Líquidos y Sólidos",
+                      initialValue: "Francisco Bojórquez",
+                    ),
+
+                    const SizedBox(height: 40),
+
+                    // Botón de GUARDAR
+                    Center(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          // Lógica para guardar el manifiesto
+                        },
+                        icon: const Icon(Icons.save),
+                        label: const Text("GUARDAR MANIFIESTO"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF3F51B5),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 40,
+                            vertical: 16,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Lado Derecho: Área de Carga de Archivos Excel
+        Expanded(
+          flex: 2,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: _uploadExcelArea(context),
+          ),
+        ),
+      ],
+    );
+  }
+}
