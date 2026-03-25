@@ -21,8 +21,23 @@ class MiAppTecnica extends StatelessWidget {
   }
 }
 
-class InicioSesion2 extends StatelessWidget {
+class InicioSesion2 extends StatefulWidget {
   const InicioSesion2({super.key});
+
+  @override
+  State<InicioSesion2> createState() => _InicioSesion2State();
+}
+
+class _InicioSesion2State extends State<InicioSesion2> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +112,7 @@ class InicioSesion2 extends StatelessWidget {
                           const SizedBox(height: 30),
                           _buildLabel("CORREO ELECTRÓNICO"),
                           const SizedBox(height: 8),
-                          _buildTextField(Icons.blur_on, "TS-000-0000"),
+                          _buildTextField(Icons.blur_on, "TS-000-0000", controller: _emailController),
                           const SizedBox(height: 25),
                           _buildLabelWithAction(
                             "CONTRASEÑA",
@@ -108,9 +123,10 @@ class InicioSesion2 extends StatelessWidget {
                             Icons.shield_outlined,
                             "••••••••",
                             obscure: true,
+                            controller: _passwordController,
                           ),
                           const SizedBox(height: 35),
-                          _buildLoginButton(),
+                          _buildLoginButton(context),
                           const SizedBox(height: 35),
                           _buildVisitorLink(),
                           const SizedBox(height: 15),
@@ -206,8 +222,9 @@ class InicioSesion2 extends StatelessWidget {
     );
   }
 
-  Widget _buildTextField(IconData icon, String hint, {bool obscure = false}) {
+  Widget _buildTextField(IconData icon, String hint, {bool obscure = false, TextEditingController? controller}) {
     return TextField(
+      controller: controller,
       obscureText: obscure,
       decoration: InputDecoration(
         filled: true,
@@ -222,12 +239,78 @@ class InicioSesion2 extends StatelessWidget {
     );
   }
 
-  Widget _buildLoginButton() {
+  void _showFloatingMessage(BuildContext context, String text, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating, // Hace el mensaje "aéreo"
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
+        elevation: 10,
+      ),
+    );
+  }
+
+  Widget _buildLoginButton(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: ElevatedButton(
-        onPressed: () {},
+        onPressed: () {
+          final email = _emailController.text.trim();
+          final password = _passwordController.text.trim();
+
+          if (email.isEmpty || password.isEmpty) {
+            _showFloatingMessage(context, 'Por favor, ingrese correo y contraseña', Colors.redAccent);
+            return;
+          }
+
+          // Validación de correo: formato correcto, min 3 caracteres antes del @ y dominio válido
+          final emailParts = email.split('@');
+          if (emailParts.length != 2) {
+            _showFloatingMessage(context, 'Correo inválido (formato incorrecto)', Colors.orange);
+            return;
+          }
+
+          final userPart = emailParts[0];
+          final domainPart = emailParts[1].toLowerCase();
+
+          if (userPart.length < 3) {
+            _showFloatingMessage(context, 'El correo requiere al menos 3 letras antes del "@"', Colors.orange);
+            return;
+          }
+
+          final validDomains = [
+            'gmail.com',
+            'hotmail.com',
+            'outlook.com',
+            'yahoo.com',
+            'live.com',
+            'icloud.com'
+          ];
+
+          if (!validDomains.contains(domainPart)) {
+            _showFloatingMessage(context, 'Dominio "$domainPart" no admitido', Colors.orange);
+            return;
+          }
+
+          // Validación de contraseña: mayor a 5 caracteres
+          if (password.length <= 5) {
+            _showFloatingMessage(context, 'La contraseña debe tener más de 5 caracteres', Colors.orange);
+            return;
+          }
+
+          // Validación de contraseña: texto, número y signos comunes
+          final RegExp passwordRegExp = RegExp(r'^[a-zA-Z0-9@#\$%\^&\*\-\_\.\+]+$');
+          if (!passwordRegExp.hasMatch(password)) {
+            _showFloatingMessage(context, 'Contraseña con caracteres no permitidos', Colors.orange);
+            return;
+          }
+
+          // Éxito
+          _showFloatingMessage(context, 'Iniciando sesión como: $email', const Color(0xFF004D40));
+        },
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF004D40),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
