@@ -1,22 +1,170 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'dart:convert';
+import 'dart:async'; // Necesario para el Timer
+import 'package:http/http.dart' as http;
 
-// --- CONSTANTES DE COLOR GLOBALES (Para evitar errores de nombre no definido) ---
-const Color kPrimaryColor = Color(0xFF004D40); // Verde oscuro
-const Color kAccentColor = Color(0xFF00897B); // Teal
-const Color kBgColor = Color(0xFFE0F2F1); // Fondo menta suave
-const Color kInputColor = Color(0xFFE8F5E9); // Fondo de inputs
+const Color kPrimaryColor = Color(0xFF004D40);
+const Color kAccentColor = Color(0xFF00897B);
+const Color kBgColor = Color(0xFFE0F2F1);
+const Color kInputColor = Color(0xFFE8F5E9);
 
-void main() {
-  runApp(
-    const MaterialApp(
-      home: RegistroOrganizacion(),
-      debugShowCheckedModeBanner: false,
-    ),
-  );
+void main() => runApp(
+  const MaterialApp(
+    home: RegistroOrganizacion(),
+    debugShowCheckedModeBanner: false,
+  ),
+);
+
+class RegistroOrganizacion extends StatefulWidget {
+  const RegistroOrganizacion({super.key});
+  @override
+  State<RegistroOrganizacion> createState() => _RegistroOrganizacionState();
 }
 
-class RegistroOrganizacion extends StatelessWidget {
-  const RegistroOrganizacion({super.key});
+class _RegistroOrganizacionState extends State<RegistroOrganizacion> {
+  // --- CONTROLADORES ---
+  final TextEditingController _razonSocialController = TextEditingController();
+  final TextEditingController _nitController = TextEditingController();
+  final TextEditingController _sectorController = TextEditingController(
+    text: 'Manufactura Pesada',
+  );
+  final TextEditingController _dir1Controller = TextEditingController();
+  final TextEditingController _dir2Controller = TextEditingController();
+  final TextEditingController _ciudadController = TextEditingController();
+  // ... otros controladores
+  final TextEditingController _latController = TextEditingController(
+    text: "19.4326", //(México)
+  );
+  final TextEditingController _lngController = TextEditingController(
+    text: "-99.1332", //(México)
+  );
+
+  final TextEditingController _nombreRespController = TextEditingController();
+  final TextEditingController _cargoController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _telefonoController = TextEditingController();
+
+  // Controladores de Contraseña
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+
+  // --- NUEVAS VARIABLES PARA EL MAPA ---
+  final MapController _mapController = MapController();
+  Timer? _debounce;
+  bool _isSearching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Escuchamos cambios en Dirección y Colonia
+    _dir1Controller.addListener(_onAddressChanged);
+    _dir2Controller.addListener(_onAddressChanged);
+  }
+
+  @override
+  void dispose() {
+    _dir1Controller.removeListener(_onAddressChanged);
+    _dir2Controller.removeListener(_onAddressChanged);
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  // Detecta cuando el usuario deja de escribir
+  void _onAddressChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 800), () {
+      _searchFromAddress();
+    });
+  }
+
+  // --- LÓGICA DE BÚSQUEDA (Texto -> Mapa) ---
+  Future<void> _searchFromAddress() async {
+    final query =
+        "${_dir1Controller.text} ${_dir2Controller.text} ${_ciudadController.text}"
+            .trim();
+    if (query.length < 5) return;
+
+    setState(() => _isSearching = true);
+
+    try {
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?format=json&q=$query&limit=1',
+      );
+      final response = await http.get(
+        url,
+        headers: {'User-Agent': 'EcoMonitorApp'},
+      );
+
+      if (response.statusCode == 200) {
+        final List data = json.decode(response.body);
+        if (data.isNotEmpty) {
+          final lat = double.parse(data[0]['lat']);
+          final lon = double.parse(data[0]['lon']);
+          final newPos = LatLng(lat, lon);
+
+          // Movemos el mapa a la nueva ubicación
+          _mapController.move(newPos, 16);
+
+          setState(() {
+            _latController.text = lat.toStringAsFixed(6);
+            _lngController.text = lon.toStringAsFixed(6);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error buscando dirección: $e");
+    } finally {
+      setState(() => _isSearching = false);
+    }
+  }
+
+  // --- LÓGICA DE REVERSA (Mapa -> Texto) ---
+  Future<void> _updateAddressFromMap(LatLng position) async {
+    setState(() {
+      _isSearching = true;
+      _latController.text = position.latitude.toStringAsFixed(6);
+      _lngController.text = position.longitude.toStringAsFixed(6);
+    });
+
+    try {
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&zoom=18&addressdetails=1',
+      );
+      final response = await http.get(
+        url,
+        headers: {'User-Agent': 'EcoMonitorApp'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final addr = data['address'] ?? {};
+
+        // Removemos temporalmente los listeners para evitar bucles infinitos
+        _dir1Controller.removeListener(_onAddressChanged);
+        _dir2Controller.removeListener(_onAddressChanged);
+
+        setState(() {
+          _dir1Controller.text =
+              "${addr['road'] ?? ''} ${addr['house_number'] ?? ''}".trim();
+          _dir2Controller.text =
+              addr['neighbourhood'] ?? addr['suburb'] ?? addr['county'] ?? '';
+          _ciudadController.text =
+              addr['city'] ?? addr['town'] ?? addr['village'] ?? '';
+        });
+
+        // Re-activamos los listeners
+        _dir1Controller.addListener(_onAddressChanged);
+        _dir2Controller.addListener(_onAddressChanged);
+      }
+    } catch (e) {
+      debugPrint("Error: $e");
+    } finally {
+      setState(() => _isSearching = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,10 +188,7 @@ class RegistroOrganizacion extends StatelessWidget {
                   children: [
                     Expanded(flex: 1, child: _buildSidebar()),
                     const SizedBox(width: 40),
-                    Expanded(
-                      flex: 2,
-                      child: _buildFormContent(context, isDesktop),
-                    ),
+                    Expanded(flex: 2, child: _buildFormContent(isDesktop)),
                   ],
                 )
               else
@@ -51,7 +196,7 @@ class RegistroOrganizacion extends StatelessWidget {
                   children: [
                     _buildSidebar(),
                     const SizedBox(height: 30),
-                    _buildFormContent(context, isDesktop),
+                    _buildFormContent(isDesktop),
                   ],
                 ),
               const SizedBox(height: 50),
@@ -63,117 +208,11 @@ class RegistroOrganizacion extends StatelessWidget {
     );
   }
 
-  // --- COMPONENTES DE LA INTERFAZ ---
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 1,
-      title: const Row(
-        children: [
-          Text(
-            'EcoMonitor',
-            style: TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-          SizedBox(width: 30),
-          Row(
-            children: [
-              _NavLabel('Dashboard'),
-              _NavLabel('Ecosystems'),
-              _NavLabel('Reports'),
-              _NavLabel('Settings'),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.headset_mic, size: 18, color: Colors.black54),
-          label: const Text(
-            'SUPPORT',
-            style: TextStyle(color: Colors.black54, fontSize: 12),
-          ),
-        ),
-        const Icon(Icons.notifications_none, color: Colors.black54),
-        const SizedBox(width: 15),
-        const CircleAvatar(
-          radius: 15,
-          backgroundColor: kPrimaryColor,
-          child: Icon(Icons.person, size: 18, color: Colors.white),
-        ),
-        const SizedBox(width: 15),
-      ],
-    );
-  }
-
-  Widget _buildSidebar() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Registro de\nOrganización',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: kPrimaryColor,
-            height: 1.1,
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          'Ingrese los datos técnicos y operativos de su empresa para iniciar el monitoreo ambiental con precisión quirúrgica.',
-          style: TextStyle(fontSize: 16, color: Colors.black54),
-        ),
-        const SizedBox(height: 30),
-        _buildInfoCard(
-          Icons.verified_user,
-          'ESTÁNDAR ISO 14001',
-          'Protocolos alineados con normativas internacionales de gestión ambiental.',
-        ),
-        const SizedBox(height: 15),
-        _buildInfoCard(
-          Icons.sensors,
-          'MONITOREO INDUSTRIAL',
-          'Integración directa con sensores de campo y telemetría avanzada.',
-        ),
-        const SizedBox(height: 30),
-        Container(
-          height: 180,
-          decoration: BoxDecoration(
-            color: Colors.grey[700],
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.eco, color: Colors.white, size: 50),
-                Text(
-                  'SAF ERUMIINA',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFormContent(BuildContext context, bool isDesktop) {
+  Widget _buildFormContent(bool isDesktop) {
     return Column(
       children: [
         _buildSectionCard(
-          title: 'Perfil Corporativo',
+          title: 'Perfil',
           icon: Icons.business,
           child: Column(
             children: [
@@ -181,78 +220,152 @@ class RegistroOrganizacion extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _buildInput(
-                      'RAZÓN SOCIAL',
-                      'Ej: Industria Petroquímica S.A.',
+                      'NOMBRE DE LA ORGANIZACIÓN/ENTIDAD',
+                      'Ej: Industria S.A.',
+                      controller: _razonSocialController,
                     ),
                   ),
                   const SizedBox(width: 15),
                   Expanded(
                     child: _buildInput(
-                      'NIT / IDENTIFICACIÓN FISCAL',
+                      'NIT / ID FISCAL',
                       '900.000.000-1',
+                      controller: _nitController,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 15),
-              _buildInput(
-                'SECTOR INDUSTRIAL',
-                'Manufactura Pesada',
-                isDropdown: true,
-              ),
             ],
           ),
         ),
         const SizedBox(height: 20),
         _buildSectionCard(
-          title: 'Ubicación Operativa',
+          title: 'Ubicación',
           icon: Icons.location_on,
-          child: Row(
+          child: Flex(
+            direction: isDesktop ? Axis.horizontal : Axis.vertical,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                flex: 3,
+              // --- COLUMNA DE INPUTS ---
+              Flexible(
+                flex: isDesktop
+                    ? 1
+                    : 0, // Cambiamos a 1 para que ocupe el 50% del ancho
                 child: Column(
                   children: [
-                    _buildInput('DIRECCIÓN PRINCIPAL', 'Calle 100 # 15-20'),
+                    _buildInput(
+                      'DIRECCIÓN',
+                      'Calle y número',
+                      controller: _dir1Controller,
+                    ),
                     const SizedBox(height: 15),
-                    _buildInput('CIUDAD', 'Bogotá D.C.'),
+                    _buildInput(
+                      'COLONIA',
+                      'Apto/Barrio',
+                      controller: _dir2Controller,
+                    ),
+                    const SizedBox(height: 15),
+                    _buildInput('CIUDAD', '', controller: _ciudadController),
                     const SizedBox(height: 15),
                     Row(
                       children: [
-                        Expanded(child: _buildInput('LATITUD', '4.7110')),
+                        Expanded(
+                          child: _buildInput(
+                            'LATITUD',
+                            '',
+                            controller: _latController,
+                          ),
+                        ),
                         const SizedBox(width: 15),
-                        Expanded(child: _buildInput('LONGITUD', '-74.0721')),
+                        Expanded(
+                          child: _buildInput(
+                            'LONGITUD',
+                            '',
+                            controller: _lngController,
+                          ),
+                        ),
                       ],
                     ),
                   ],
                 ),
               ),
-              if (isDesktop) ...[
-                const SizedBox(width: 20),
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: kPrimaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      image: const DecorationImage(
-                        image: NetworkImage(
-                          'https://via.placeholder.com/300x200?text=Mapa+Ubicación',
+
+              // --- ESPACIADO DINÁMICO ---
+              if (isDesktop)
+                const SizedBox(width: 30)
+              else
+                const SizedBox(height: 20),
+
+              // --- CONTENEDOR DEL MAPA (CON MARCO) ---
+              Flexible(
+                flex: isDesktop ? 1 : 0,
+                child: Container(
+                  height: isDesktop ? 400 : 280,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(
+                      14,
+                    ), // Un poco más curvo por fuera
+                    border: Border.all(
+                      color:
+                          kPrimaryColor, // Quitamos la transparencia para que resalte más
+                      width: 5, // <-- AUMENTAMOS EL GROSOR AQUÍ (antes era 2)
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                      9,
+                    ), // Ajustado para que encaje perfecto dentro del nuevo marco
+                    child: Stack(
+                      children: [
+                        FlutterMap(
+                          mapController: _mapController,
+                          options: MapOptions(
+                            initialCenter: const LatLng(19.4326, -99.1332),
+                            initialZoom: 14,
+                            onMapEvent: (event) {
+                              if (event is MapEventMoveEnd &&
+                                  event.source != MapEventSource.custom) {
+                                _updateAddressFromMap(event.camera.center);
+                              }
+                            },
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+                              subdomains: const ['a', 'b', 'c', 'd'],
+                            ),
+                          ],
                         ),
-                        fit: BoxFit.cover,
-                      ),
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 35),
+                            child: Icon(
+                              Icons.location_on,
+                              color: Colors.red,
+                              size: 40,
+                            ),
+                          ),
+                        ),
+                        if (_isSearching)
+                          const Positioned(
+                            top: 10,
+                            right: 10,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ),
         const SizedBox(height: 20),
         _buildSectionCard(
-          title: 'Contacto Técnico',
+          title: 'Contacto',
           icon: Icons.contact_mail,
           child: Column(
             children: [
@@ -260,13 +373,18 @@ class RegistroOrganizacion extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _buildInput(
-                      'NOMBRE DEL RESPONSABLE',
-                      'Ing. Carlos Mendoza',
+                      'NOMBRE RESPONSABLE',
+                      'Ej: Ing. Carlos',
+                      controller: _nombreRespController,
                     ),
                   ),
                   const SizedBox(width: 15),
                   Expanded(
-                    child: _buildInput('CARGO', 'Director de Sostenibilidad'),
+                    child: _buildInput(
+                      'CARGO',
+                      'Director Técnico',
+                      controller: _cargoController,
+                    ),
                   ),
                 ],
               ),
@@ -275,75 +393,102 @@ class RegistroOrganizacion extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _buildInput(
-                      'CORREO ELECTRÓNICO',
-                      'carlos.m@empresa.com',
+                      'EMAIL',
+                      'correo@empresa.com',
+                      controller: _emailController,
                     ),
                   ),
                   const SizedBox(width: 15),
-                  Expanded(child: _buildInput('TELÉFONO', '+57 300 000 0000')),
+                  Expanded(
+                    child: _buildInput(
+                      'TELÉFONO',
+                      '+57 300...',
+                      controller: _telefonoController,
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 30),
-        SizedBox(
-          width: double.infinity,
-          height: 60,
-          child: ElevatedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.bolt, color: Colors.white),
-            label: const Text(
-              'FINALIZAR REGISTRO Y ACTIVAR MONITOREO',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+        const SizedBox(height: 20),
+
+        // --- NUEVO CARD DE SEGURIDAD ---
+        _buildSectionCard(
+          title: 'Seguridad',
+          icon: Icons.lock,
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildInput(
+                  'CONTRASEÑA',
+                  'Mínimo 8 caracteres',
+                  controller: _passwordController,
+                  obscureText: true,
+                ),
               ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kPrimaryColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+              const SizedBox(width: 15),
+              Expanded(
+                child: _buildInput(
+                  'CONFIRMAR CONTRASEÑA',
+                  'Repita la contraseña',
+                  controller: _confirmPasswordController,
+                  obscureText: true,
+                ),
               ),
-            ),
+            ],
           ),
         ),
+
+        const SizedBox(height: 30),
+        _buildSubmitButton(),
       ],
     );
   }
 
-  Widget _buildInfoCard(IconData icon, String title, String subtitle) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: kAccentColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: kPrimaryColor),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-              ],
+  // --- MÉTODOS HELPER ---
+  Widget _buildInput(
+    String label,
+    String hint, {
+    bool isDropdown = false,
+    bool obscureText = false,
+    TextEditingController? controller,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: kPrimaryColor,
+          ),
+        ),
+        const SizedBox(height: 5),
+        TextField(
+          controller: controller,
+          readOnly: isDropdown,
+          obscureText: obscureText,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(fontSize: 13, color: Colors.black26),
+            filled: true,
+            fillColor: kInputColor,
+            suffixIcon: isDropdown
+                ? const Icon(Icons.keyboard_arrow_down)
+                : null,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 15,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide.none,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -384,103 +529,96 @@ class RegistroOrganizacion extends StatelessWidget {
     );
   }
 
-  Widget _buildInput(String label, String hint, {bool isDropdown = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
+  Widget _buildSubmitButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 60,
+      child: ElevatedButton.icon(
+        onPressed: () => print("Guardado"),
+        icon: const Icon(Icons.bolt, color: Colors.white),
+        label: const Text(
+          'FINALIZAR REGISTRO',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: kPrimaryColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() => AppBar(
+    backgroundColor: Colors.white,
+    elevation: 1,
+    title: const Text(
+      'EcoMonitor',
+      style: TextStyle(
+        color: Colors.black,
+        fontWeight: FontWeight.bold,
+        fontSize: 18,
+      ),
+    ),
+    actions: [
+      const Icon(Icons.notifications_none, color: Colors.black54),
+      const SizedBox(width: 15),
+      const CircleAvatar(
+        radius: 15,
+        backgroundColor: kPrimaryColor,
+        child: Icon(Icons.person, size: 18, color: Colors.white),
+      ),
+      const SizedBox(width: 15),
+    ],
+  );
+
+  Widget _buildSidebar() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Registro de\nOrganización/Entidad',
+        style: TextStyle(
+          fontSize: 36,
+          fontWeight: FontWeight.bold,
+          color: kPrimaryColor,
+          height: 1.1,
+        ),
+      ),
+      const SizedBox(height: 20),
+      const Text(
+        'Ingrese los datos técnicos y operativos para iniciar el monitoreo ambiental.',
+        style: TextStyle(fontSize: 16, color: Colors.black54),
+      ),
+      const SizedBox(height: 50),
+
+      // --- NUEVO SÍMBOLO DE ORGANIZACIÓN ---
+      Center(
+        child: Container(
+          padding: const EdgeInsets.all(40),
+          decoration: BoxDecoration(
+            color: kAccentColor.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.domain, // Icono de edificio/corporativo
+            size: 120,
             color: kPrimaryColor,
           ),
         ),
-        const SizedBox(height: 5),
-        TextField(
-          readOnly: isDropdown,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(fontSize: 13, color: Colors.black26),
-            filled: true,
-            fillColor: kInputColor,
-            suffixIcon: isDropdown
-                ? const Icon(Icons.keyboard_arrow_down)
-                : null,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 15,
-              vertical: 10,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFooter() {
-    return const Column(
-      children: [
-        Divider(),
-        SizedBox(height: 20),
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          spacing: 20,
-          runSpacing: 10,
-          children: [
-            Text(
-              '© 2026 PRECISION CONSERVATOR ECOSYSTEMS. ALL RIGHTS RESERVED.',
-              style: TextStyle(fontSize: 10, color: Colors.black38),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _FooterLink('PRIVACY POLICY'),
-                SizedBox(width: 15),
-                _FooterLink('TERMS OF SERVICE'),
-                SizedBox(width: 15),
-                _FooterLink('TECHNICAL DOCS'),
-              ],
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// --- WIDGETS PRIVADOS ---
-
-class _NavLabel extends StatelessWidget {
-  final String label;
-  const _NavLabel(this.label);
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.black54, fontSize: 13),
       ),
-    );
-  }
-}
+    ],
+  );
 
-class _FooterLink extends StatelessWidget {
-  final String label;
-  const _FooterLink(this.label);
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(
-        color: kAccentColor,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
+  Widget _buildInfoCard(IconData icon, String title, String subtitle) =>
+      Container();
+
+  Widget _buildFooter() => const Column(
+    children: [
+      Divider(),
+      SizedBox(height: 20),
+      Text(
+        '© 2026 PRECISION CONSERVATOR ECOSYSTEMS. ALL RIGHTS RESERVED.',
+        style: TextStyle(fontSize: 10, color: Colors.black38),
       ),
-    );
-  }
+    ],
+  );
 }
